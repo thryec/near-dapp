@@ -5,9 +5,11 @@ use near_sdk::{
     near_bindgen, require,
     serde::{Deserialize, Serialize},
     store::*,
-    AccountId, BorshStorageKey, Promise, PanicOnDefault,
+    AccountId, BorshStorageKey, PanicOnDefault, Promise,
 };
 use near_sdk_contract_tools::{event, standard::nep297::Event};
+
+// -------------------- Events -------------------- //
 
 #[event(
     standard = "x-predictions-market",
@@ -35,7 +37,11 @@ enum ContractEvent {
         market_id: u32,
     },
     // TODO: Events for credits and withdrawals
+    Credits {},
+    Withdrawals {},
 }
+
+// ------------------- Data Structures ------------------- //
 
 #[derive(BorshSerialize, BorshDeserialize, Debug)]
 struct Market {
@@ -114,6 +120,8 @@ impl Contract {
         }
     }
 
+    // ------------------- Mutative Functions ------------------- //
+
     pub fn create_market(&mut self, description: String) -> ViewMarket {
         let id = self.markets.len();
         let owner = env::predecessor_account_id();
@@ -188,26 +196,7 @@ impl Contract {
         }
     }
 
-    pub fn get_market(&self, market_id: u32) -> Option<ViewMarket> {
-        self.markets.get(market_id).map(|m| m.into())
-    }
-
-    pub fn list_markets(&self) -> Vec<ViewMarket> {
-        self.markets.iter().map(|m| m.into()).collect()
-    }
-
-    pub fn get_offers(&self, market_id: u32) -> Vec<Offer> {
-        self.offers
-            .iter()
-            .filter_map(|(_, b)| {
-                if b.market_id == market_id {
-                    Some(b.clone())
-                } else {
-                    None
-                }
-            })
-            .collect()
-    }
+    // ------------------- Payable Functions ------------------- //
 
     #[payable]
     pub fn create_offer(&mut self, market_id: u32, is_long: bool) -> Offer {
@@ -288,5 +277,28 @@ impl Contract {
             short,
             amount: o.amount,
         });
+    }
+
+    // ------------------- View Functions ------------------- //
+
+    pub fn get_market(&self, market_id: u32) -> Option<ViewMarket> {
+        self.markets.get(market_id).map(|m| m.into())
+    }
+
+    pub fn list_markets(&self) -> Vec<ViewMarket> {
+        self.markets.iter().map(|m| m.into()).collect()
+    }
+
+    pub fn get_offers(&self, market_id: u32) -> Vec<Offer> {
+        self.offers
+            .iter()
+            .filter_map(|(_, b)| {
+                if b.market_id == market_id {
+                    Some(b.clone())
+                } else {
+                    None
+                }
+            })
+            .collect()
     }
 }

@@ -731,6 +731,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "near-dapp"
+version = "0.1.0"
+dependencies = [
+ "near-contract-standards",
+ "near-sdk",
+ "near-sdk-contract-tools",
+ "thiserror",
+]
+
+[[package]]
 name = "near-primitives"
 version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -862,16 +872,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 1.0.109",
-]
-
-[[package]]
-name = "near-smart-contract-rust-template"
-version = "0.1.0"
-dependencies = [
- "near-contract-standards",
- "near-sdk",
- "near-sdk-contract-tools",
- "thiserror",
 ]
 
 [[package]]

@@ -1,7 +1,7 @@
 [package]
 authors = ["Jacob Lindahl <jacob.lindahl@near.org>"]
 edition = "2021"
-name = "near-smart-contract-rust-template"
+name = "near-dapp"
 publish = false
 version = "0.1.0"
 
