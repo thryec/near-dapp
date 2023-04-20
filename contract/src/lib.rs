@@ -7,7 +7,12 @@ use near_sdk::{
     store::*,
     AccountId, BorshStorageKey, PanicOnDefault, Promise,
 };
-use near_sdk_contract_tools::{event, standard::nep297::Event};
+use near_sdk_contract_tools::{
+    event, 
+    standard::nep297::Event,
+    FungibleToken,
+};
+use near_contract_standards::fungible_token::FungibleToken;
 
 // -------------------- Events -------------------- //
 
@@ -36,9 +41,15 @@ enum ContractEvent {
     MarketClosed {
         market_id: u32,
     },
-    // TODO: Events for credits and withdrawals
-    Credits {},
-    Withdrawals {},
+    // Added Credit and Withdraw events 
+    Credit {
+        account_id: AccountId,
+        amount: U128,
+    },
+    Withdraw {
+        account_id: AccountId,
+        amount: U128,
+    },
 }
 
 // ------------------- Data Structures ------------------- //
@@ -108,6 +119,13 @@ pub enum StorageKey {
     MarketShares(u32),
 }
 
+// TODO: implement fungible token standards to represent shares 
+#[near_bindgen]
+#[derive(BorshDeserialize, BorshSerialize, PanicOnDefault)]
+pub struct Contract {
+    token: FungibleToken,
+}
+
 #[near_bindgen]
 impl Contract {
     #[init]
@@ -123,9 +141,13 @@ impl Contract {
     // ------------------- Mutative Functions ------------------- //
 
     pub fn create_market(&mut self, description: String) -> ViewMarket {
+        // use length of current markets array as new market id
         let id = self.markets.len();
+
+        // set owner as msg.sender
         let owner = env::predecessor_account_id();
 
+        // create new market object
         let m = Market {
             id,
             description,
@@ -134,44 +156,77 @@ impl Contract {
             shares: Vector::new(StorageKey::MarketShares(id)),
         };
 
+        // add new market object into markets array
         self.markets.push(m);
 
+        // emit event to indicate creation of market
         ContractEvent::MarketCreated {
             market_id: id,
             owner,
         }
         .emit();
 
+        // retrieve newly created market info.
+        // unwrap() either returns the inner element or panics
+        // into() converts the result into a usable type (since From was used)
         self.markets.get(id).unwrap().into()
     }
 
     fn credit_account(&mut self, account_id: AccountId, amount: u128) {
-        *self.credit.entry(account_id).or_insert(0) += amount;
+        // adds new account entry into credit hashmap, inserts default of 0 if empty, increments with additional amount
+        *self.credit.entry(account_id.clone()).or_insert(0) += amount;
+
+        // emit Credit event 
+        ContractEvent::Credit {
+            account_id,
+            amount: amount.into() 
+        }.emit(); 
     }
 
+    // TODO: only let owner of funds withdraw from the contract? 
     pub fn withdraw(&mut self) -> Promise {
+        // set account to withdraw to as msg.sender
         let predecessor = env::predecessor_account_id();
+
+        // query amount that predecessor owns
         let amount = self
             .credit
             .remove(&predecessor)
             .unwrap_or_else(|| env::panic_str("You have no rewards to withdraw."));
 
+        // emit Withdraw event 
+        ContractEvent::Withdraw {
+            account_id: predecessor.clone(),
+            amount: amount.into() 
+        }.emit(); 
+
+        // transfer amount to withdrawer
         Promise::new(predecessor).transfer(amount)
+
     }
 
     pub fn close_market(&mut self, market_id: u32, is_long: bool) {
+        // fetch instance of market using market_id
         let market = self
             .markets
             .get_mut(market_id)
             .unwrap_or_else(|| env::panic_str("Market does not exist!"));
+
+        // ensure that market is still open
         require!(market.is_open, "Market is already closed.");
         let predecessor = env::predecessor_account_id();
+
+        // only allow market owner to close the market
         require!(
             market.owner == predecessor,
             "You are not allowed to close a market you did not create."
         );
+
+        // update state of market to not open
         market.is_open = false;
 
+        // iterate through shares array in market object access SharePair structs 
+        // return a collection of tuples (account_id, amount)
         let credits = market
             .shares
             .iter()
@@ -187,10 +242,13 @@ impl Contract {
             })
             .collect::<Vec<_>>();
 
+        // emit market closed event     
         ContractEvent::MarketClosed { market_id }.emit();
 
+        // free market resource since it is now closed and out of scope 
         drop(market);
 
+        // iterate through credits array and transfer respective shares to creditors 
         for (creditor, amount) in credits {
             self.credit_account(creditor, amount.0 * 2);
         }
@@ -200,6 +258,7 @@ impl Contract {
 
     #[payable]
     pub fn create_offer(&mut self, market_id: u32, is_long: bool) -> Offer {
+        // set amount as msg.value 
         let amount = env::attached_deposit();
         require!(
             amount > 0,
@@ -209,6 +268,8 @@ impl Contract {
         let id = self.next_offer_id;
         self.next_offer_id += 1;
         let account_id = env::predecessor_account_id();
+
+        // set account owner as msg.sender 
         let o = Offer {
             id,
             is_long,
@@ -218,6 +279,8 @@ impl Contract {
         };
 
         self.offers.insert(id, o.clone());
+
+        // TODO: mint shares to account_id 
 
         ContractEvent::OfferCreated {
             offer_id: id,
@@ -240,6 +303,7 @@ impl Contract {
         );
         let amount: U128 = amount.into();
 
+        // check that offer_id exists 
         let o = self.offers.remove(&offer_id).unwrap_or_else(|| {
             env::panic_str("Offer does not exist. Maybe someone already accepted it?")
         });
@@ -254,6 +318,7 @@ impl Contract {
             "You cannot accept your own offer."
         );
 
+        // check that market is still open 
         let market = self
             .markets
             .get_mut(o.market_id)
@@ -272,6 +337,8 @@ impl Contract {
             (predecessor, o.account_id)
         };
 
+        // TODO: mint shares to account_id 
+
         market.shares.push(SharePair {
             long,
             short,
@@ -280,6 +347,11 @@ impl Contract {
     }
 
     // ------------------- View Functions ------------------- //
+
+    // TODO: add read function to retrieve number of shares per user 
+    pub fun get_shares(&self, offer_id: u32) -> u32 {
+        self.offers.get(offer_id).map()
+    } 
 
     pub fn get_market(&self, market_id: u32) -> Option<ViewMarket> {
         self.markets.get(market_id).map(|m| m.into())
